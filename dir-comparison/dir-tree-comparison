@@ -1,0 +1,90 @@
+#!/bin/bash
+
+# Set the directory paths
+dir1="/mnt/archive/work/"
+dir2="/mnt/borg-repo-mount/mnt/archive/work/"
+
+# Calculate the sizes of the directories
+size1=$(du -s -m "$dir1" | awk '{print $1}')
+size2=$(du -s -m "$dir2" | awk '{print $1}')
+
+size_diff=$(echo "$size1 - $size2" | bc -l)
+
+
+# -	-	-	-	-	-	-	-	-	-
+
+# Set the length of the top and bottom lines
+line_length=$(( ${#dir1} + ${#dir2} + 13 ))
+ 
+# Print the top line
+printf "\e[1m%s\e[0m\n" "$(printf '%*s' "$line_length" '' | tr ' ' '-')"
+ 
+# Print the directory paths
+echo -e "\e[1m| Directory1"
+echo -e "\e[1m|" 
+echo -e "\e[1m| Path: $dir1"
+echo -e "\e[1m| Size: ${size1} MB"
+
+printf "\e[1m%s\e[0m\n" "$(printf '%*s' "$line_length" '' | tr ' ' '-')"
+
+echo -e "\e[1m| Directory2"      
+echo -e "\e[1m|"  
+echo -e "\e[1m| Path: $dir2"  
+echo -e "\e[1m| Size: ${size2} MB"
+
+# Print the bottom line
+printf "\e[1m%s\e[0m\n" "$(printf '%*s' "$line_length" '' | tr ' ' '-')"
+echo -e "\e[1;31m| Size difference: $size_diff MB\e[0m"
+printf "\e[1m%s\e[0m\n" "$(printf '%*s' "$line_length" '' | tr ' ' '-')" 
+echo -e "\e[1m|"   
+printf "\e[1m%s\e[0m\n" "$(printf '%*s' "$line_length" '' | tr ' ' '-')"
+
+# -	-	-	-	-	-	-	-	-	-
+
+# Loop through all matching subdirectories
+for sub_dir1 in "$dir1"/*; do
+    sub_dir2="${dir2}/${sub_dir1##*/}"
+    if [[ -d "$sub_dir1" && -d "$sub_dir2" ]]; then
+        # Calculate the size of the subdirectories in megabytes
+        size1=$(du -s -m "$sub_dir1" | awk '{print $1}')
+        size2=$(du -s -m "$sub_dir2" | awk '{print $1}')
+
+        # Get the number of files and subdirectories in the subdirectories
+        num_files1=$(find "$sub_dir1" -type f | wc -l)
+        num_dirs1=$(find "$sub_dir1" -mindepth 1 -type d | wc -l)
+        num_files2=$(find "$sub_dir2" -type f | wc -l)
+        num_dirs2=$(find "$sub_dir2" -mindepth 1 -type d | wc -l)
+
+        # Print the size and number of files and subdirectories for each subdirectory
+        echo -e "Directory: ${sub_dir1##*/}\t Size: ${size1} MB\t Files: ${num_files1}\t Directories: ${num_dirs1}"
+        echo -e "Directory: ${sub_dir2##*/}\t Size: ${size2} MB\t Files: ${num_files2}\t Directories: ${num_dirs2}"
+
+        # Compare the sizes of the subdirectories and print the result in green or red
+        if (( $(echo "$size1 == $size2" | bc -l) )); then
+            echo -e "\033[0;32mMatch\033[0m"
+        else
+            echo -e "\033[0;31mMismatch\033[0m"
+
+            # Print the files missing in each subdirectory if there is a mismatch
+            diff -q <(find "$sub_dir1" -type f | sort) <(find "$sub_dir2" -type f | sort) | grep "Only in $sub_dir1" | sed 's/^.*Only in //'
+            diff -q <(find "$sub_dir1" -type f | sort) <(find "$sub_dir2" -type f | sort) | grep "Only in $sub_dir2" | sed 's/^.*Only in //'
+            
+            # Print the difference in sizes or number of files
+            if (( $(echo "$size1 > $size2" | bc -l) )); then
+                echo -e "Size Difference: $(echo "$size1 - $size2" | bc -l) MB"
+            else
+                echo -e "Size Difference: $(echo "$size2 - $size1" | bc -l) MB"
+            fi
+
+            # Only print the number of files difference if it's non-zero
+            if (( $num_files1 != $num_files2 )); then
+                if (( $(echo "$num_files1 > $num_files2" | bc -l) )); then
+                    echo -e "Number of Files Difference: $(echo "$num_files1 - $num_files2" | bc -l)"
+                else
+                    echo -e "Number of Files Difference: $(echo "$num_files2 - $num_files1" | bc -l)"
+                fi
+            fi
+        fi
+        echo "-------------------------------------------------------------"
+    fi
+done
